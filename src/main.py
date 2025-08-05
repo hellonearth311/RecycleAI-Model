@@ -36,41 +36,26 @@ with tf.device(device_name):
     def create_enhanced_cnn(input_shape, num_classes):
         model = models.Sequential()
 
-        model.add(layers.Conv2D(64, (3, 3), activation='relu', input_shape=input_shape, padding='same'))
+        model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=input_shape, padding='same'))
         model.add(layers.BatchNormalization())
+        model.add(layers.MaxPooling2D((2, 2)))
+        model.add(layers.Dropout(0.25))
+
         model.add(layers.Conv2D(64, (3, 3), activation='relu', padding='same'))
+        model.add(layers.BatchNormalization())
         model.add(layers.MaxPooling2D((2, 2)))
         model.add(layers.Dropout(0.25))
 
         model.add(layers.Conv2D(128, (3, 3), activation='relu', padding='same'))
         model.add(layers.BatchNormalization())
-        model.add(layers.Conv2D(128, (3, 3), activation='relu', padding='same'))
         model.add(layers.MaxPooling2D((2, 2)))
         model.add(layers.Dropout(0.25))
 
-        model.add(layers.Conv2D(256, (3, 3), activation='relu', padding='same'))
-        model.add(layers.BatchNormalization())
-        model.add(layers.Conv2D(256, (3, 3), activation='relu', padding='same'))
-        model.add(layers.MaxPooling2D((2, 2)))
-        model.add(layers.Dropout(0.25))
-
-        model.add(layers.Conv2D(512, (3, 3), activation='relu', padding='same'))
-        model.add(layers.BatchNormalization())
-        model.add(layers.Conv2D(512, (3, 3), activation='relu', padding='same'))
-        model.add(layers.MaxPooling2D((2, 2)))
-        model.add(layers.Dropout(0.25))
-
-        model.add(layers.Conv2D(1024, (3, 3), activation='relu', padding='same'))
-        model.add(layers.BatchNormalization())
         model.add(layers.GlobalAveragePooling2D())
-
-        model.add(layers.Dense(1024, activation='relu'))
-        model.add(layers.BatchNormalization())
-        model.add(layers.Dropout(0.5))
-        model.add(layers.Dense(512, activation='relu'))
-        model.add(layers.BatchNormalization())
-        model.add(layers.Dropout(0.5))
         model.add(layers.Dense(256, activation='relu'))
+        model.add(layers.BatchNormalization())
+        model.add(layers.Dropout(0.5))
+        model.add(layers.Dense(128, activation='relu'))
         model.add(layers.Dropout(0.3))
         model.add(layers.Dense(num_classes, activation='softmax'))
 
@@ -86,6 +71,26 @@ with tf.device(device_name):
     print(f"Number of classes: {len(class_names)}")
     print(f"Class names: {class_names}")
 
+    from sklearn.utils.class_weight import compute_class_weight
+    from collections import Counter
+    
+    label_counts = Counter(y)
+    print(f"Raw class distribution: {dict(label_counts)}")
+    
+    class_weights = compute_class_weight('balanced', classes=np.unique(y), y=y)
+    
+    min_samples = min(label_counts.values())
+    max_samples = max(label_counts.values())
+    ratio = max_samples / min_samples
+    
+    if ratio > 3:
+        for i, weight in enumerate(class_weights):
+            if label_counts[i] < (max_samples * 0.4):
+                class_weights[i] *= 1.5
+    
+    class_weight_dict = dict(zip(np.unique(y), class_weights))
+    print(f"Adjusted class weights: {dict(zip(class_names, [class_weight_dict[i] for i in range(len(class_names))]))}")
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
@@ -99,15 +104,12 @@ with tf.device(device_name):
     print(f"Test set: {X_test.shape[0]} images")
 
     datagen = ImageDataGenerator(
-        rotation_range=30,
-        width_shift_range=0.3,
-        height_shift_range=0.3,
+        rotation_range=15,
+        width_shift_range=0.15,
+        height_shift_range=0.15,
         horizontal_flip=True,
-        vertical_flip=True,
-        zoom_range=0.3,
-        shear_range=0.3,
-        brightness_range=[0.8, 1.2],
-        channel_shift_range=0.1,
+        zoom_range=0.1,
+        brightness_range=[0.9, 1.1],
         fill_mode='nearest'
     )
 
@@ -121,8 +123,7 @@ with tf.device(device_name):
     optimizer = optimizers.Adam(
         learning_rate=0.0005,
         beta_1=0.9,
-        beta_2=0.999,
-        epsilon=1e-7
+        beta_2=0.999
     )
 
     model.compile(
@@ -135,19 +136,18 @@ with tf.device(device_name):
 
     early_stopping = callbacks.EarlyStopping(
         monitor='val_accuracy',
-        patience=20,
+        patience=12,
         restore_best_weights=True,
         verbose=1,
-        min_delta=0.001
+        min_delta=0.01
     )
 
     reduce_lr = callbacks.ReduceLROnPlateau(
         monitor='val_loss',
-        factor=0.5,
-        patience=10,
-        min_lr=1e-8,
-        verbose=1,
-        cooldown=5
+        factor=0.3,
+        patience=6,
+        min_lr=1e-7,
+        verbose=1
     )
 
     checkpoint = callbacks.ModelCheckpoint(
@@ -158,21 +158,31 @@ with tf.device(device_name):
         save_weights_only=False
     )
 
-    cosine_scheduler = callbacks.ReduceLROnPlateau(
-        monitor='val_accuracy',
-        factor=0.8,
-        patience=5,
-        min_lr=1e-9,
-        verbose=1
-    )
-
     print("\nTraining the model...")
+    
+    def balanced_batch_generator(X, y, batch_size, datagen, class_weights):
+        while True:
+            indices = np.random.choice(
+                len(X), 
+                size=batch_size, 
+                replace=True,
+                p=[class_weights[label] / sum(class_weights.values()) for label in y]
+            )
+            
+            batch_X = X[indices]
+            batch_y = y[indices]
+            
+            for i in range(len(batch_X)):
+                batch_X[i] = datagen.random_transform(batch_X[i])
+            
+            yield batch_X, batch_y
+    
     history = model.fit(
-        datagen.flow(X_train, y_train, batch_size=16),
-        steps_per_epoch=len(X_train) // 16,
-        epochs=150,
+        balanced_batch_generator(X_train, y_train, 32, datagen, class_weight_dict),
+        steps_per_epoch=len(X_train) // 32,
+        epochs=75,
         validation_data=(X_val, y_val),
-        callbacks=[early_stopping, reduce_lr, checkpoint, cosine_scheduler],
+        callbacks=[early_stopping, reduce_lr, checkpoint],
         verbose=1
     )
 
@@ -200,6 +210,13 @@ with tf.device(device_name):
         if np.sum(class_mask) > 0:
             class_accuracy = np.sum(y_pred_classes[class_mask] == y_test[class_mask]) / np.sum(class_mask)
             print(f"{class_name}: {class_accuracy:.4f} ({class_accuracy*100:.2f}%)")
+
+    from sklearn.metrics import confusion_matrix, classification_report
+    cm = confusion_matrix(y_test, y_pred_classes)
+    print(f"\nConfusion Matrix:")
+    print(cm)
+    print(f"\nClassification Report:")
+    print(classification_report(y_test, y_pred_classes, target_names=class_names))
 
     model.save('recycleai_model.h5')
     model.save_weights('recycleai_model.weights.h5')

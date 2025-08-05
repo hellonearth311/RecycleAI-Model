@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image
 from sklearn.utils.class_weight import compute_class_weight
 
 def load_and_preprocess_data(data_dir, target_size=(128, 128)):
@@ -31,17 +31,7 @@ def load_and_preprocess_data(data_dir, target_size=(128, 128)):
                     
                     img = img.resize(target_size, Image.Resampling.LANCZOS)
                     
-                    enhancer = ImageEnhance.Contrast(img)
-                    img = enhancer.enhance(1.2)
-                    
-                    enhancer = ImageEnhance.Sharpness(img)
-                    img = enhancer.enhance(1.1)
-                    
                     img_array = np.array(img, dtype=np.float32) / 255.0
-                    
-                    mean = np.array([0.485, 0.456, 0.406])
-                    std = np.array([0.229, 0.224, 0.225])
-                    img_array = (img_array - mean) / std
                     
                     class_images.append(img_array)
                     
@@ -57,9 +47,4 @@ def load_and_preprocess_data(data_dir, target_size=(128, 128)):
     class_counts = [labels.count(i) for i in range(len(class_names))]
     print(f"Images per class: {dict(zip(class_names, class_counts))}")
     
-    labels_array = np.array(labels)
-    class_weights = compute_class_weight('balanced', classes=np.unique(labels_array), y=labels_array)
-    class_weight_dict = dict(zip(np.unique(labels_array), class_weights))
-    print(f"Class weights: {dict(zip(class_names, [class_weight_dict[i] for i in range(len(class_names))]))}")
-    
-    return np.array(images, dtype=np.float32), labels_array, class_names
+    return np.array(images, dtype=np.float32), np.array(labels), class_names
