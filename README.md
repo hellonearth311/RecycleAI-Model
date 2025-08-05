@@ -1,3 +1,6 @@
+# THIS IS DEPRECATED. I AM NOW USING TRASHNET PRETRAINED TO DO THIS.
+
+
 # RecycleAI Model
 This is the source code and dataset for the CNN that powers [RecycleAI](https://github.com/hellonearth311/RecycleAI)
 
@@ -5,4 +8,4 @@ This is the source code and dataset for the CNN that powers [RecycleAI](https://
 Huge thanks to [TrashNet](https://github.com/garythung/trashnet) for the dataset. This project could not have been made without you!
 
 ## Note
-The model weights are not included in the repo as they exceed the GitHub size limit of 100 MB.
+The model weights are not included in the repo as they exceed the GitHub size limit of 100 MB. I will be posting them soon.

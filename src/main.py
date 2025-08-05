@@ -162,16 +162,21 @@ with tf.device(device_name):
     
     def balanced_batch_generator(X, y, batch_size, datagen, class_weights):
         while True:
+            # Create proper probability distribution
+            weights_per_sample = np.array([class_weights[label] for label in y])
+            probabilities = weights_per_sample / np.sum(weights_per_sample)
+            
             indices = np.random.choice(
                 len(X), 
                 size=batch_size, 
                 replace=True,
-                p=[class_weights[label] / sum(class_weights.values()) for label in y]
+                p=probabilities
             )
             
-            batch_X = X[indices]
+            batch_X = X[indices].copy()
             batch_y = y[indices]
             
+            # Apply data augmentation
             for i in range(len(batch_X)):
                 batch_X[i] = datagen.random_transform(batch_X[i])
             
